@@ -173,7 +173,7 @@ func generateCertificate(name string, outputFilename string) error {
 
 	// Draw the second image at the top right corner
 	// err = drawImage(rgba, "./TR.png", rgba.Bounds().Dx()-cornerWidth, 0, cornerWidth, cornerHeight)
-	err = drawImage(rgba, "./flags/TR.png", rgba.Bounds().Dx()-cornerWidth, 0)
+	err = drawImage(rgba, "./flags/GR.png", rgba.Bounds().Dx()-cornerWidth, 0)
 
 	if err != nil {
 		return err

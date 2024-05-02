@@ -2,7 +2,7 @@
 
 Proof of Peacemaking is essentially a document exchanged between (at least) two individuals, each possessing distinct identities or identifiers.
 
-These documents may include optional details such as citizenship information (displayed as flags), the organizations issuing and endorsing them, and additional information about co-signers (referred to as peacemakers), such as their names and social media account handles.
+These certifiable documents may include optional details such as citizenship information (displayed as flags), the organizations issuing and endorsing them, and additional information about co-signers (referred to as peacemakers), such as their names and social media account handles.
 
 Given that all aforementioned details, except names/nicknames, are optional by design, the situation can be understood as follows: co-signers of these bilateral and multilateral agreements by anonymous global citizens.
 
