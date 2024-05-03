@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -30,14 +29,24 @@ type RequestData struct {
 	Peacemakers []Peacemaker `json:"peacemakers"`
 }
 
+type NameOffset struct {
+	X uint16
+	Y uint16
+}
+
 type HandlerFunc func(http.ResponseWriter, *http.Request)
+
+const (
+	templatePathPrefix = "./templates/ProofOfPeacemaking_%s.jpg"
+	fontPath           = "./fonts/Platypi-VariableFont_wght.ttf"
+	flagsPathPrefix    = "./flags/%s.png"
+)
 
 func RegisterRoutes() {
 	http.HandleFunc("POST /", handleCreateSingleCertificate)
 }
 
 func handleCreateSingleCertificate(w http.ResponseWriter, r *http.Request) {
-
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Error reading request body", http.StatusInternalServerError)
@@ -52,30 +61,129 @@ func handleCreateSingleCertificate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, peacemaker := range requestData.Peacemakers {
-		fmt.Printf("Creating certificate for %s with template >> %s \n", peacemaker.Name, peacemaker.Language)
-		fail := generateCertificate(requestData.Peacemakers, peacemaker.Name, peacemaker.Language)
 
-		if fail != nil {
-			log.Printf("Error generating certificate: %v", fail)
+		if err := generateCertificateForPeacemaker(peacemaker, requestData.Peacemakers); err != nil {
+			log.Printf("Error generating certificate for %s: %v", peacemaker.Name, err)
 			http.Error(w, "Error generating certificate", http.StatusInternalServerError)
 			return
 		}
 	}
 
-	// fail := generateCertificate(requestData.Peacemakers, fmt.Sprintf("%s.pdf", outputFileName))
-
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, "Single certificate created successfully.\n")
 }
 
-func drawText(img *image.RGBA, text string, font *truetype.Font, x, y int, textColor color.Color) error {
-	if img == nil {
-		return errors.New("image is nil")
-	}
-	if font == nil {
-		return errors.New("font is nil")
+func generateCertificateForPeacemaker(peacemaker Peacemaker, peacemakers []Peacemaker) error {
+	templatePath := fmt.Sprintf(templatePathPrefix, peacemaker.Language)
+	if err := generateCertificateForTemplate(templatePath, peacemaker, peacemakers); err != nil {
+		return err
 	}
 
+	return nil
+}
+
+func generateCertificateForTemplate(templatePath string, peacemaker Peacemaker, peacemakers []Peacemaker) error {
+	// Open the template image
+	img, err := openTemplateImage(templatePath)
+	if err != nil {
+		return err
+	}
+
+	// Convert image to RGBA
+	rgba := convertImageToRGBA(img)
+	// Load the font
+	font, err := loadFont(fontPath)
+	if err != nil {
+		return err
+	}
+
+	for _, peacemaker := range peacemakers {
+		if peacemakers[0] == peacemaker {
+			err = drawTextOnImage(rgba, peacemaker.Name, font, 480, 600, color.RGBA{0, 0, 0, 255})
+			if err != nil {
+				return err
+			}
+
+			err = drawImagesOnCorners(rgba, peacemaker.Citizenship, 0)
+			if err != nil {
+				return err
+			}
+		} else {
+			err = drawTextOnImage(rgba, peacemaker.Name, font, 1120, 600, color.RGBA{0, 0, 0, 255})
+			if err != nil {
+				return err
+			}
+
+			err = drawImagesOnCorners(rgba, peacemaker.Citizenship, 1)
+			if err != nil {
+				return err
+			}
+		}
+		// Draw text onto the image
+	}
+
+	// Convert image to buffer
+	buf, err := convertImageToBuffer(rgba)
+	if err != nil {
+		return err
+	}
+
+	// Create a new PDF document and add the image
+	pdf, err := createPDFWithImage(buf, &peacemaker)
+	if err != nil {
+		return err
+	}
+
+	// Save the PDF to a file
+	err = savePDFToFile(pdf, fmt.Sprintf("ProofOfPeacemaking_%s.pdf", peacemaker.Name))
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// helper funcs
+
+func openTemplateImage(templatePath string) (*image.RGBA, error) {
+	file, err := os.Open(templatePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	img, _, err := image.Decode(file)
+	if err != nil {
+		return nil, err
+	}
+
+	rgba := image.NewRGBA(img.Bounds())
+	draw.Draw(rgba, rgba.Bounds(), img, image.Point{0, 0}, draw.Src)
+
+	return rgba, nil
+}
+
+func convertImageToRGBA(img image.Image) *image.RGBA {
+	rgba := image.NewRGBA(img.Bounds())
+	draw.Draw(rgba, rgba.Bounds(), img, image.Point{0, 0}, draw.Src)
+	return rgba
+}
+
+func loadFont(fontPath string) (*truetype.Font, error) {
+	fontBytes, err := os.ReadFile(fontPath)
+	if err != nil {
+		return nil, err
+	}
+
+	font, err := truetype.Parse(fontBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	return font, nil
+}
+
+func drawTextOnImage(img *image.RGBA, text string, font *truetype.Font, x, y int, textColor color.RGBA) error {
 	d := freetype.NewContext()
 	d.SetDPI(72)
 	d.SetFont(font)
@@ -86,25 +194,18 @@ func drawText(img *image.RGBA, text string, font *truetype.Font, x, y int, textC
 
 	pt := freetype.Pt(x, y+int(d.PointToFixed(0)>>10)) // calculate the baseline from the top
 	_, err := d.DrawString(text, pt)
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
-func drawImage(img *image.RGBA, imagePath string, x, y int) error {
-	if img == nil {
-		return errors.New("image is nil")
-	}
-
-	// Open the provided image file
+func drawImagesOnCorners(img *image.RGBA, citizenship string, drawOrder int) error {
+	// Assuming flags are stored in a directory and named after the citizenship
+	imagePath := fmt.Sprintf(flagsPathPrefix, citizenship)
 	file, err := os.Open(imagePath)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 
-	// Decode the provided image
 	imageData, _, err := image.Decode(file)
 	if err != nil {
 		return err
@@ -115,98 +216,56 @@ func drawImage(img *image.RGBA, imagePath string, x, y int) error {
 	newWidth := 80
 	newHeight := (originalHeight * newWidth) / originalWidth
 
-	// Resize the image to the new dimensions
 	resizedImage := resize.Resize(uint(newWidth), uint(newHeight), imageData, resize.Lanczos3)
 
-	// Calculate the destination rectangle for the resized image
-	dstRect := image.Rect(x, y, x+newWidth, y+newHeight)
+	dstRect := image.Rect(0, 0, newWidth, newHeight) // Adjust these values based on your layout
 
-	// Draw the resized image onto the target image
-	draw.Draw(img, dstRect, resizedImage, image.Point{0, 0}, draw.Over)
+	cornerWidth := 100
+	if drawOrder == 0 {
+		draw.Draw(img, dstRect, resizedImage, image.Point{0, 0}, draw.Over)
+	} else {
+		draw.Draw(img, dstRect, resizedImage, image.Point{img.Bounds().Dx() - cornerWidth, 0}, draw.Over)
+
+	}
 
 	return nil
 }
 
-func generateCertificate(peacemakers []Peacemaker, name string, language string) error {
-	templatePath := fmt.Sprintf("./templates/ProofOfPeacemaking_%s.jpg", language)
-	log.Printf("templatePath @ generateCertificate: %s", templatePath)
-	file, err := os.Open(templatePath)
+func convertImageToBuffer(img *image.RGBA) (*bytes.Buffer, error) {
+	buf := new(bytes.Buffer)
+	err := jpeg.Encode(buf, img, nil)
 	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	img, err := jpeg.Decode(file)
-	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// Convert image to RGBA
-	rgba := image.NewRGBA(img.Bounds())
-	draw.Draw(rgba, rgba.Bounds(), img, image.Point{0, 0}, draw.Src)
+	return buf, nil
+}
 
-	fontBytes, err := os.ReadFile("./fonts/Platypi-VariableFont_wght.ttf")
-	if err != nil {
-		return err
-	}
-
-	font, err := truetype.Parse(fontBytes)
-	if err != nil {
-		return err
-	}
-
-	textColor := color.RGBA{0, 0, 0, 255}
-
-	// Draw text onto the image
-	err = drawText(rgba, peacemakers[0].Name, font, 480, 600, textColor)
-	if err != nil {
-		return err
-	}
-
-	err = drawText(rgba, peacemakers[1].Name, font, 1120, 600, textColor)
-	if err != nil {
-		return err
-	}
-
-	// Draw images onto the corners
-	cornerWidth := 100
-	// cornerHeight := 100
-
-	// Draw the first image at the top left corner
-	err = drawImage(rgba, fmt.Sprintf("./flags/%s.png", peacemakers[0].Citizenship), 0, 0)
-	if err != nil {
-		return err
-	}
-
-	// Draw the second image at the top right corner
-	err = drawImage(rgba, fmt.Sprintf("./flags/%s.png", peacemakers[1].Citizenship), rgba.Bounds().Dx()-cornerWidth, 0)
-
-	if err != nil {
-		return err
-	}
-
-	// Create a new PDF document
+func createPDFWithImage(buf *bytes.Buffer, peacemaker *Peacemaker) (*gofpdf.Fpdf, error) {
 	pdf := gofpdf.New("L", "mm", "A4", "")
 	pdf.AddPage()
+
 	opts := gofpdf.ImageOptions{
 		ImageType: "JPEG",
 		ReadDpi:   true,
 	}
 
-	// Convert image to buffer
-	buf := new(bytes.Buffer)
-	err = jpeg.Encode(buf, rgba, nil)
-	if err != nil {
-		return err
-	}
+	pdf.RegisterImageOptionsReader(fmt.Sprintf("ProofOfPeacemaking_%s", peacemaker.Name)+".jpg", opts, bytes.NewReader(buf.Bytes()))
+	pdf.ImageOptions(fmt.Sprintf("ProofOfPeacemaking_%s", peacemaker.Name)+".jpg", 0, 0, 297, 210, false, opts, 0, "")
 
-	// Add image to PDF
-	width, height := 297, 210 // Dimensions of A4 in landscape mode (297mm x 210mm)
+	return pdf, nil
+}
 
-	pdf.RegisterImageOptionsReader(fmt.Sprintf("ProofOfPeacemaking_%s", name)+".jpg", opts, bytes.NewReader(buf.Bytes()))
-	pdf.ImageOptions(fmt.Sprintf("ProofOfPeacemaking_%s", name)+".jpg", 0, 0, float64(width), float64(height), false, opts, 0, "")
+func savePDFToFile(pdf *gofpdf.Fpdf, fileName string) error {
+	err := pdf.OutputFileAndClose(fileName)
+	return err
+}
 
-	return pdf.OutputFileAndClose(fmt.Sprintf("ProofOfPeacemaking_%s.pdf", name))
+var nameOffsets []NameOffset
+
+func init() {
+	nameOffsets = append(nameOffsets, NameOffset{X: uint16(480), Y: uint16(600)})
+	nameOffsets = append(nameOffsets, NameOffset{X: uint16(1120), Y: uint16(600)})
 }
 
 func main() {

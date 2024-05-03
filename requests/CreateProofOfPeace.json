@@ -1,0 +1,14 @@
+{
+    "peacemakers": [
+        {
+            "name": "Turco",
+            "citizenship": "TR",
+            "language": "TR"
+        },
+        {
+            "name": "Greko",
+            "citizenship": "GR",
+            "language": "EN"
+        }
+    ]
+}
