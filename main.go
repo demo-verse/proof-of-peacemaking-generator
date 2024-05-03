@@ -20,22 +20,23 @@ import (
 	"github.com/nfnt/resize"
 )
 
+type Peacemaker struct {
+	Name        string `json:"name"`
+	Citizenship string `json:"citizenship"`
+	Language    string `json:"language"`
+}
+
 type RequestData struct {
-	Name string `json:"name"`
+	Peacemakers []Peacemaker `json:"peacemakers"`
 }
 
 type HandlerFunc func(http.ResponseWriter, *http.Request)
 
 func RegisterRoutes() {
-
-	http.HandleFunc("/", handleCreateSingleCertificate)
+	http.HandleFunc("POST /", handleCreateSingleCertificate)
 }
 
 func handleCreateSingleCertificate(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
-		return
-	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -50,13 +51,18 @@ func handleCreateSingleCertificate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("Creating single certificate for %s\n", requestData.Name)
-	fail := generateCertificate(requestData.Name, fmt.Sprintf("%s.pdf", requestData.Name))
-	if fail != nil {
-		log.Printf("Error generating certificate: %v", fail)
-		http.Error(w, "Error generating certificate", http.StatusInternalServerError)
-		return
+	for _, peacemaker := range requestData.Peacemakers {
+		fmt.Printf("Creating certificate for %s with template >> %s \n", peacemaker.Name, peacemaker.Language)
+		fail := generateCertificate(requestData.Peacemakers, peacemaker.Name, peacemaker.Language)
+
+		if fail != nil {
+			log.Printf("Error generating certificate: %v", fail)
+			http.Error(w, "Error generating certificate", http.StatusInternalServerError)
+			return
+		}
 	}
+
+	// fail := generateCertificate(requestData.Peacemakers, fmt.Sprintf("%s.pdf", outputFileName))
 
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, "Single certificate created successfully.\n")
@@ -104,10 +110,9 @@ func drawImage(img *image.RGBA, imagePath string, x, y int) error {
 		return err
 	}
 
-	// Calculate the new dimensions while maintaining aspect ratio
 	originalWidth := imageData.Bounds().Dx()
 	originalHeight := imageData.Bounds().Dy()
-	newWidth := 100
+	newWidth := 80
 	newHeight := (originalHeight * newWidth) / originalWidth
 
 	// Resize the image to the new dimensions
@@ -122,8 +127,10 @@ func drawImage(img *image.RGBA, imagePath string, x, y int) error {
 	return nil
 }
 
-func generateCertificate(name string, outputFilename string) error {
-	file, err := os.Open("./templates/ProofOfPeacemaking_EN.jpg")
+func generateCertificate(peacemakers []Peacemaker, name string, language string) error {
+	templatePath := fmt.Sprintf("./templates/ProofOfPeacemaking_%s.jpg", language)
+	log.Printf("templatePath @ generateCertificate: %s", templatePath)
+	file, err := os.Open(templatePath)
 	if err != nil {
 		return err
 	}
@@ -151,12 +158,12 @@ func generateCertificate(name string, outputFilename string) error {
 	textColor := color.RGBA{0, 0, 0, 255}
 
 	// Draw text onto the image
-	err = drawText(rgba, name, font, 480, 600, textColor)
+	err = drawText(rgba, peacemakers[0].Name, font, 480, 600, textColor)
 	if err != nil {
 		return err
 	}
 
-	err = drawText(rgba, "Someone like you", font, 1120, 600, textColor)
+	err = drawText(rgba, peacemakers[1].Name, font, 1120, 600, textColor)
 	if err != nil {
 		return err
 	}
@@ -166,14 +173,13 @@ func generateCertificate(name string, outputFilename string) error {
 	// cornerHeight := 100
 
 	// Draw the first image at the top left corner
-	err = drawImage(rgba, "./flags/TR.png", 0, 0)
+	err = drawImage(rgba, fmt.Sprintf("./flags/%s.png", peacemakers[0].Citizenship), 0, 0)
 	if err != nil {
 		return err
 	}
 
 	// Draw the second image at the top right corner
-	// err = drawImage(rgba, "./TR.png", rgba.Bounds().Dx()-cornerWidth, 0, cornerWidth, cornerHeight)
-	err = drawImage(rgba, "./flags/GR.png", rgba.Bounds().Dx()-cornerWidth, 0)
+	err = drawImage(rgba, fmt.Sprintf("./flags/%s.png", peacemakers[1].Citizenship), rgba.Bounds().Dx()-cornerWidth, 0)
 
 	if err != nil {
 		return err
@@ -196,10 +202,11 @@ func generateCertificate(name string, outputFilename string) error {
 
 	// Add image to PDF
 	width, height := 297, 210 // Dimensions of A4 in landscape mode (297mm x 210mm)
-	pdf.RegisterImageOptionsReader(outputFilename+".jpg", opts, bytes.NewReader(buf.Bytes()))
-	pdf.ImageOptions(outputFilename+".jpg", 0, 0, float64(width), float64(height), false, opts, 0, "")
 
-	return pdf.OutputFileAndClose(outputFilename)
+	pdf.RegisterImageOptionsReader(fmt.Sprintf("ProofOfPeacemaking_%s", name)+".jpg", opts, bytes.NewReader(buf.Bytes()))
+	pdf.ImageOptions(fmt.Sprintf("ProofOfPeacemaking_%s", name)+".jpg", 0, 0, float64(width), float64(height), false, opts, 0, "")
+
+	return pdf.OutputFileAndClose(fmt.Sprintf("ProofOfPeacemaking_%s.pdf", name))
 }
 
 func main() {
