@@ -32,7 +32,7 @@ type RequestData struct {
 }
 
 func main() {
-	http.HandleFunc("POST /", handleCreateCertificates)
+	http.HandleFunc("POST /peace", handleCreateCertificates)
 	log.Fatal(http.ListenAndServe(":3030", nil))
 }
 
@@ -168,8 +168,6 @@ func drawFlag(img *image.RGBA, countryCode string, x, y int) error {
 
 	return nil
 }
-
-// return saveToPDF(img, fmt.Sprintf("ProofOfPeacemaking_%s.pdf", currentPeacemaker.Name), id.String(), uuidHrefX, uuidHrefY)
 
 func saveToPDF(img *image.RGBA, filename string, uuid string, uuidX float64, uuidY float64) error {
 	buf := new(bytes.Buffer)
