@@ -18,7 +18,6 @@ import (
 	"github.com/golang/freetype"
 	"github.com/golang/freetype/truetype"
 	"github.com/google/uuid"
-	"github.com/joho/godotenv"
 	"github.com/jung-kurt/gofpdf"
 	"github.com/nfnt/resize"
 	"go.mongodb.org/mongo-driver/bson"
@@ -73,10 +72,10 @@ type User struct {
 
 func main() {
 
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatalf("Error loading .env file: %v", err)
-	}
+	// err := godotenv.Load()
+	// if err != nil {
+	// 	log.Fatalf("Error loading .env file: %v", err)
+	// }
 
 	// Get the MongoDB URL from environment variables
 	mongoDBURL := os.Getenv("MONGO_DB_URL")
