@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,10 +20,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/jung-kurt/gofpdf"
 	"github.com/nfnt/resize"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type Peacemaker struct {
 	Name        string `json:"name"`
+	Wallet      string `json:"wallet"`
 	Citizenship string `json:"citizenship"`
 	Language    string `json:"language"`
 }
@@ -31,8 +35,45 @@ type RequestData struct {
 	Peacemakers []Peacemaker `json:"peacemakers"`
 }
 
+type Template struct {
+	Name      string `json:"name"`
+	Language  string `json:"language"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+	CreatedBy string `json:"created_by"`
+	Path      string `json:"path"`
+}
+
+type NewTemplate struct {
+	Name      string `json:"name"`
+	Language  string `json:"language"`
+	CreatedBy string `json:"created_by"`
+	Path      string `json:"path"`
+}
+
 func main() {
+
+	// Initialize the MongoDB client
+	clientOptions := options.Client().ApplyURI("mongodb://localhost:27017")
+	client, err := mongo.Connect(context.Background(), clientOptions)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Verify the connection
+	err = client.Ping(context.Background(), nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println("Connected to MongoDB!")
+
 	http.HandleFunc("POST /peace", handleCreateCertificates)
+	http.HandleFunc("POST /recognition", handleCreateCertificates)
+
+	http.HandleFunc("POST /template", func(w http.ResponseWriter, r *http.Request) {
+		handleCreateTemplate(context.Background(), client, w, r)
+	})
+
 	log.Fatal(http.ListenAndServe(":3030", nil))
 }
 
@@ -50,11 +91,24 @@ func handleCreateCertificates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate a UUID
+	endpoint := r.URL.Path
+	var templateKind string
+
+	switch endpoint {
+	case "/peace":
+		templateKind = "peace"
+	case "/recognition":
+		templateKind = "recognition"
+	default:
+		http.NotFound(w, r)
+		return
+	}
+	log.Printf(" @handleCreateCertificates >>  template kind resolved as %s", templateKind)
+
 	id := uuid.New()
 	for _, peacemaker := range requestData.Peacemakers {
 		log.Printf("Creating certificate for %s with template >> %s \n", peacemaker.Name, peacemaker.Language)
-		if err := generateCertificate(id.String(), requestData.Peacemakers, peacemaker); err != nil {
+		if err := generateCertificate(templateKind, id.String(), requestData.Peacemakers, peacemaker); err != nil {
 			log.Printf("Error generating certificate for %s: %v", peacemaker.Name, err)
 			http.Error(w, fmt.Sprintf("Error generating certificate for %s", peacemaker.Name), http.StatusInternalServerError)
 			return
@@ -63,8 +117,18 @@ func handleCreateCertificates(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Fprintf(w, "Certificates created successfully.\n")
 }
-func generateCertificate(uuidText string, peacemakers []Peacemaker, currentPeacemaker Peacemaker) error {
-	templatePath := fmt.Sprintf("./templates/ProofOfPeacemaking_%s.jpg", currentPeacemaker.Language)
+func generateCertificate(kind string, uuidText string, peacemakers []Peacemaker, currentPeacemaker Peacemaker) error {
+
+	var templateKind string
+	if kind == "peace" {
+		templateKind = "ProofOfPeacemaking"
+	} else {
+		templateKind = "ProofOfRecognition"
+	}
+
+	log.Printf(" @generateCertificate >>  template kind resolved as %s", templateKind)
+
+	templatePath := fmt.Sprintf("./templates/%s_%s.jpg", templateKind, currentPeacemaker.Language)
 	img, err := loadTemplateImage(templatePath)
 	if err != nil {
 		return err
@@ -103,9 +167,31 @@ func generateCertificate(uuidText string, peacemakers []Peacemaker, currentPeace
 		return err
 	}
 
-	return saveToPDF(img, fmt.Sprintf("./outcomes/ProofOfPeacemaking_%s.pdf", currentPeacemaker.Name), uuidText, float64(uuidHrefX), float64(uuidHrefY))
+	// var fileName  string
+	fileName := fmt.Sprintf("%s_%s_%s.pdf", templateKind, currentPeacemaker.Name, currentPeacemaker.Wallet)
+	return saveToPDF(img, fmt.Sprintf("./outcomes/%s", fileName), uuidText, float64(uuidHrefX), float64(uuidHrefY))
 }
 
+func handleCreateTemplate(ctx context.Context, client *mongo.Client, w http.ResponseWriter, r *http.Request) (*mongo.InsertOneResult, error) {
+	var newTemplate NewTemplate
+	if err := json.NewDecoder(r.Body).Decode(&newTemplate); err != nil {
+		http.Error(w, "Invalid input", http.StatusBadRequest)
+		return nil, err
+	}
+
+	collection := client.Database("diplomacy-network").Collection("templates")
+	result, err := collection.InsertOne(ctx, newTemplate)
+	if err != nil {
+		http.Error(w, "Failed to insert template", http.StatusInternalServerError)
+		return nil, err
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(result)
+	return result, nil
+}
+
+// UTILS
 func loadTemplateImage(path string) (*image.RGBA, error) {
 	file, err := os.Open(path)
 	if err != nil {
