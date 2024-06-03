@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jung-kurt/gofpdf"
 	"github.com/nfnt/resize"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -38,8 +39,6 @@ type RequestData struct {
 type Template struct {
 	Name      string `json:"name"`
 	Language  string `json:"language"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
 	CreatedBy string `json:"created_by"`
 	Path      string `json:"path"`
 }
@@ -49,6 +48,26 @@ type NewTemplate struct {
 	Language  string `json:"language"`
 	CreatedBy string `json:"created_by"`
 	Path      string `json:"path"`
+}
+
+type NewUser struct {
+	FirstName    string   `json:"first_name"`
+	LastName     string   `json:"last_name"`
+	NickName     string   `json:"nick_name"`
+	Email        string   `json:"email"`
+	Wallet       string   `json:"wallet"`
+	Languages    []string `json:"languages"`
+	Citizenships []string `json:"citizenships"`
+}
+
+type User struct {
+	FirstName    string   `json:"first_name"`
+	LastName     string   `json:"last_name"`
+	NickName     string   `json:"nick_name"`
+	Email        string   `json:"email"`
+	Wallet       string   `json:"wallet"`
+	Languages    []string `json:"languages"`
+	Citizenships []string `json:"citizenships"`
 }
 
 func main() {
@@ -72,6 +91,10 @@ func main() {
 
 	http.HandleFunc("POST /template", func(w http.ResponseWriter, r *http.Request) {
 		handleCreateTemplate(context.Background(), client, w, r)
+	})
+
+	http.HandleFunc("POST /user", func(w http.ResponseWriter, r *http.Request) {
+		handleCreateUser(context.Background(), client, w, r)
 	})
 
 	log.Fatal(http.ListenAndServe(":3030", nil))
@@ -182,13 +205,47 @@ func handleCreateTemplate(ctx context.Context, client *mongo.Client, w http.Resp
 	collection := client.Database("diplomacy-network").Collection("templates")
 	result, err := collection.InsertOne(ctx, newTemplate)
 	if err != nil {
-		http.Error(w, "Failed to insert template", http.StatusInternalServerError)
+		http.Error(w, "Failed to create new template", http.StatusInternalServerError)
 		return nil, err
 	}
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(result)
 	return result, nil
+}
+
+func handleCreateUser(ctx context.Context, client *mongo.Client, w http.ResponseWriter, r *http.Request) (*mongo.InsertOneResult, error) {
+	var newUser NewUser
+	if err := json.NewDecoder(r.Body).Decode(&newUser); err != nil {
+		http.Error(w, "Invalid input", http.StatusBadRequest)
+		return nil, err
+	}
+
+	// Check if user with the same email or wallet already exists
+	collection := client.Database("diplomacy-network").Collection("users")
+	filter := bson.M{"email": newUser.Email, "wallet": newUser.Wallet}
+	var existingUser User
+	err := collection.FindOne(ctx, filter).Decode(&existingUser)
+	if err == mongo.ErrNoDocuments {
+		// No document found, proceed with insertion
+		result, err := collection.InsertOne(ctx, newUser)
+		if err != nil {
+			http.Error(w, "Failed to create new user", http.StatusInternalServerError)
+			return nil, err
+		}
+
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(result)
+		return result, nil
+	} else if err != nil {
+		// An error occurred other than no documents found
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return nil, err
+	} else {
+		// Document found, indicate conflict
+		http.Error(w, "A user with this email or wallet already exists", http.StatusConflict)
+		return nil, errors.New("conflict")
+	}
 }
 
 // UTILS
