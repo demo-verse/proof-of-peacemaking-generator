@@ -80,7 +80,7 @@ func main() {
 	// Get the MongoDB URL from environment variables
 	mongoDBURL := os.Getenv("MONGO_DB_URL")
 	if mongoDBURL == "" {
-		log.Fatal("MONGO_DB_URL environment variable not set")
+		log.Fatal("MONGO_DB_URL environment variable not set.")
 	}
 
 	// Initialize the MongoDB client
