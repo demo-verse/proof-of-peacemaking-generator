@@ -18,6 +18,7 @@ import (
 	"github.com/golang/freetype"
 	"github.com/golang/freetype/truetype"
 	"github.com/google/uuid"
+	"github.com/gorilla/handlers"
 	"github.com/jung-kurt/gofpdf"
 	"github.com/nfnt/resize"
 	"go.mongodb.org/mongo-driver/bson"
@@ -97,16 +98,46 @@ func main() {
 	}
 	log.Println("Connected to MongoDB!")
 
-	http.HandleFunc("POST /peace", handleCreateCertificates)
-	http.HandleFunc("POST /recognition", handleCreateCertificates)
+	log.Println("Configuring CORS")
 
-	http.HandleFunc("POST /template", func(w http.ResponseWriter, r *http.Request) {
-		handleCreateTemplate(context.Background(), client, w, r)
-	})
+	corsMiddleware := handlers.CORS(
+		handlers.AllowedOrigins([]string{
+			"https://diplomacy.network",
+			"http://localhost:3000",
+		}),
+		handlers.AllowedMethods([]string{
+			http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, // Specify allowed methods
+		}),
+		handlers.AllowedHeaders([]string{
+			"Content-Type",
+		}),
+	)
+	wrapperPeace := func(w http.ResponseWriter, r *http.Request) {
+		handler := corsMiddleware(http.HandlerFunc(handleCreateCertificates))
+		handler.ServeHTTP(w, r)
+	}
+	wrapperRecognition := func(w http.ResponseWriter, r *http.Request) {
+		handler := corsMiddleware(http.HandlerFunc(handleCreateCertificates))
+		handler.ServeHTTP(w, r)
+	}
+	wrapperTemplate := func(w http.ResponseWriter, r *http.Request) {
+		handler := corsMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handleCreateTemplate(context.Background(), client, w, r)
+		}))
+		handler.ServeHTTP(w, r)
+	}
+	wrapperUser := func(w http.ResponseWriter, r *http.Request) {
+		handler := corsMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handleCreateUser(context.Background(), client, w, r)
+		}))
+		handler.ServeHTTP(w, r)
+	}
 
-	http.HandleFunc("POST /user", func(w http.ResponseWriter, r *http.Request) {
-		handleCreateUser(context.Background(), client, w, r)
-	})
+	// Use the wrapper functions with http.HandleFunc
+	http.HandleFunc("POST /peace", wrapperPeace)
+	http.HandleFunc("POST /recognition", wrapperRecognition)
+	http.HandleFunc("POST /template", wrapperTemplate)
+	http.HandleFunc("POST /user", wrapperUser)
 
 	log.Fatal(http.ListenAndServe(":3030", nil))
 }

@@ -4,14 +4,16 @@ go 1.22.0
 
 require (
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
+	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/jung-kurt/gofpdf v1.16.2
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
-	github.com/joho/godotenv v1.5.1 // indirect
 )
 
 require (
+	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/golang/snappy v0.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/gorilla/handlers v1.5.2 // indirect
 	github.com/klauspost/compress v1.13.6 // indirect
 	github.com/montanaflynn/stats v0.0.0-20171201202039-1bf9dbcd8cbe // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
