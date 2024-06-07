@@ -106,7 +106,7 @@ func main() {
 			"http://localhost:3000",
 		}),
 		handlers.AllowedMethods([]string{
-			http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions  // Specify allowed methods
+			http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions, // Specify allowed methods
 		}),
 		handlers.AllowedHeaders([]string{
 			"Content-Type", "Access-Control-Allow-Origin",
