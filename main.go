@@ -106,12 +106,13 @@ func main() {
 			"http://localhost:3000",
 		}),
 		handlers.AllowedMethods([]string{
-			http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, // Specify allowed methods
+			http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions  // Specify allowed methods
 		}),
 		handlers.AllowedHeaders([]string{
-			"Content-Type",
+			"Content-Type", "Access-Control-Allow-Origin",
 		}),
 	)
+
 	wrapperPeace := func(w http.ResponseWriter, r *http.Request) {
 		handler := corsMiddleware(http.HandlerFunc(handleCreateCertificates))
 		handler.ServeHTTP(w, r)
