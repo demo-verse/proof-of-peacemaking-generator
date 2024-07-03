@@ -19,6 +19,8 @@ import (
 	"github.com/golang/freetype/truetype"
 	"github.com/google/uuid"
 	"github.com/gorilla/handlers"
+	"github.com/gorilla/mux"
+	"github.com/joho/godotenv"
 	"github.com/jung-kurt/gofpdf"
 	"github.com/nfnt/resize"
 	"go.mongodb.org/mongo-driver/bson"
@@ -73,10 +75,10 @@ type User struct {
 
 func main() {
 
-	// err := godotenv.Load()
-	// if err != nil {
-	// 	log.Fatalf("Error loading .env file: %v", err)
-	// }
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatalf("Error loading .env file: %v", err)
+	}
 
 	// Get the MongoDB URL from environment variables
 	mongoDBURL := os.Getenv("MONGO_DB_URL")
@@ -101,46 +103,33 @@ func main() {
 	log.Println("Configuring CORS")
 
 	corsMiddleware := handlers.CORS(
-		handlers.AllowedOrigins([]string{
-			"https://diplomacy.network",
-			"http://localhost:3000",
-		}),
-		handlers.AllowedMethods([]string{
-			http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions, // Specify allowed methods
-		}),
-		handlers.AllowedHeaders([]string{
-			"Content-Type", "Access-Control-Allow-Origin",
-		}),
+		handlers.AllowedOrigins([]string{"https://diplomacy.network", "http://localhost:3000", "https://your-frontend-domain.com"}),
+		handlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
+		handlers.AllowedHeaders([]string{"Content-Type", "Authorization"}),
+		handlers.AllowCredentials(),
+		handlers.MaxAge(3600),
 	)
 
-	wrapperPeace := func(w http.ResponseWriter, r *http.Request) {
-		handler := corsMiddleware(http.HandlerFunc(handleCreateCertificates))
-		handler.ServeHTTP(w, r)
-	}
-	wrapperRecognition := func(w http.ResponseWriter, r *http.Request) {
-		handler := corsMiddleware(http.HandlerFunc(handleCreateCertificates))
-		handler.ServeHTTP(w, r)
-	}
-	wrapperTemplate := func(w http.ResponseWriter, r *http.Request) {
-		handler := corsMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			handleCreateTemplate(context.Background(), client, w, r)
-		}))
-		handler.ServeHTTP(w, r)
-	}
-	wrapperUser := func(w http.ResponseWriter, r *http.Request) {
-		handler := corsMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			handleCreateUser(context.Background(), client, w, r)
-		}))
-		handler.ServeHTTP(w, r)
-	}
+	r := mux.NewRouter()
+	r.HandleFunc("/peace", handleCreateCertificates).Methods("POST")
+	r.HandleFunc("/recognition", handleCreateCertificates).Methods("POST")
+	r.HandleFunc("/template", func(w http.ResponseWriter, r *http.Request) {
+		handleCreateTemplate(context.Background(), client, w, r)
+	}).Methods("POST")
+	r.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
+		handleCreateUser(context.Background(), client, w, r)
+	}).Methods("POST")
 
-	// Use the wrapper functions with http.HandleFunc
-	http.HandleFunc("POST /peace", wrapperPeace)
-	http.HandleFunc("POST /recognition", wrapperRecognition)
-	http.HandleFunc("POST /template", wrapperTemplate)
-	http.HandleFunc("POST /user", wrapperUser)
+	// Add a global OPTIONS handler
+	r.HandleFunc("/{any:.*}", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}).Methods("OPTIONS")
 
-	log.Fatal(http.ListenAndServe(":3030", nil))
+	// Wrap the router with the CORS middleware
+	handler := corsMiddleware(r)
+
+	// Start the server
+	log.Fatal(http.ListenAndServe(":3030", handler))
 }
 
 func handleCreateCertificates(w http.ResponseWriter, r *http.Request) {
