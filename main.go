@@ -18,7 +18,6 @@ import (
 	"github.com/golang/freetype"
 	"github.com/golang/freetype/truetype"
 	"github.com/google/uuid"
-	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
 	"github.com/jung-kurt/gofpdf"
@@ -87,16 +86,34 @@ func main() {
 
 	log.Println("Configuring CORS")
 
-	corsMiddleware := handlers.CORS(
-		handlers.AllowedOrigins([]string{"https://diplomacy.network", "http://localhost:3000", "https://your-frontend-domain.com"}),
-		handlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
-		handlers.AllowedHeaders([]string{"Content-Type", "Authorization"}),
-		handlers.AllowCredentials(),
-		handlers.MaxAge(3600),
-	)
+	// corsMiddleware := handlers.CORS(
+	// 	handlers.AllowedOrigins([]string{"https://diplomacy.network", "https://www.diplomacy.network", "http://localhost:3000"}),
+	// 	handlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
+	// 	handlers.AllowedHeaders([]string{"Content-Type", "Authorization"}),
+	// 	handlers.AllowCredentials(),
+	// 	handlers.ExposedHeaders([]string{"Content-Length", "Content-Type"}),
+	// 	handlers.MaxAge(3600),
+
+	// )
 
 	r := mux.NewRouter()
+	// r.HandleFunc("/peace", func(w http.ResponseWriter, r *http.Request) {
+	// 	if r.Method == "OPTIONS" {
+	// 		w.Header().Set("Access-Control-Allow-Origin", origin)
+	// 		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	// 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	// 		w.Header().Set("Access-Control-Allow-Credentials", "true")
+	// 		w.Header().Set("Access-Control-Max-Age", "86400")
+	// 		w.WriteHeader(http.StatusNoContent)
+	// 		return
+	// 	}
+	// 	handleCreateCertificates(w, r)
+	// }).Methods("POST")
+	r.Methods("OPTIONS").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
 	r.HandleFunc("/peace", handleCreateCertificates).Methods("POST")
+
 	r.HandleFunc("/recognition", handleCreateCertificates).Methods("POST")
 	r.HandleFunc("/template", func(w http.ResponseWriter, r *http.Request) {
 		handleCreateTemplate(context.Background(), client, w, r)
@@ -115,7 +132,27 @@ func main() {
 
 	port := getPort()
 	// Start the server
-	log.Fatal(http.ListenAndServe(port, handler))
+	log.Fatal(http.ListenAndServe(port, corsMiddleware(handler)))
+}
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Set CORS headers
+		w.Header().Set("Access-Control-Allow-Origin", "https://diplomacy.network, https://www.diplomacy.network, http://localhost:3000")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		w.Header().Set("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers")
+		w.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Type")
+		// Handle preflight requests
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		// Call the next handler
+		next.ServeHTTP(w, r)
+	})
 }
 
 func getPort() string {
