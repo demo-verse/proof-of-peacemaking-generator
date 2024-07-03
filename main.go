@@ -75,30 +75,15 @@ type User struct {
 
 func main() {
 
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatalf("Error loading .env file: %v", err)
-	}
+	log.Println("Loading env vars")
 
-	// Get the MongoDB URL from environment variables
-	mongoDBURL := os.Getenv("MONGO_DB_URL")
-	if mongoDBURL == "" {
-		log.Fatal("MONGO_DB_URL environment variable not set.")
-	}
+	loadEnvironment()
+	log.Println("connecting to db")
 
-	// Initialize the MongoDB client
-	clientOptions := options.Client().ApplyURI(mongoDBURL)
-	client, err := mongo.Connect(context.Background(), clientOptions)
+	client, err := connectDB()
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	// Verify the connection
-	err = client.Ping(context.Background(), nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Println("Connected to MongoDB!")
 
 	log.Println("Configuring CORS")
 
@@ -128,8 +113,52 @@ func main() {
 	// Wrap the router with the CORS middleware
 	handler := corsMiddleware(r)
 
+	port := getPort()
 	// Start the server
-	log.Fatal(http.ListenAndServe(":3030", handler))
+	log.Fatal(http.ListenAndServe(port, handler))
+}
+
+func getPort() string {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = ":3030"
+	} else {
+		port = ":" + port
+	}
+	return port
+}
+
+func loadEnvironment() {
+	if os.Getenv("DEV") != "" {
+		err := godotenv.Load()
+		if err != nil {
+			log.Fatal("Error loading .env file")
+		}
+	}
+}
+
+func connectDB() (*mongo.Client, error) {
+	mongoDBURL := os.Getenv("MONGO_DB_URL")
+	if mongoDBURL == "" {
+		return nil, errors.New("db url is not set")
+	}
+
+	// Initialize the MongoDB client
+	clientOptions := options.Client().ApplyURI(mongoDBURL)
+	client, err := mongo.Connect(context.Background(), clientOptions)
+	if err != nil {
+		return nil, errors.New("could not connect to db")
+	}
+
+	// Verify the connection
+	err = client.Ping(context.Background(), nil)
+	if err != nil {
+		return nil, errors.New("could not verify the db connection")
+
+	}
+	log.Println("Connected to MongoDB!")
+
+	return client, nil
 }
 
 func handleCreateCertificates(w http.ResponseWriter, r *http.Request) {
